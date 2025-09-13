@@ -1,0 +1,157 @@
+{
+  "name": "OpenVoice PDF-to-Speech (Clean & Fixed)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "simple-pdf-to-speech",
+        "responseMode": "lastNode",
+        "responseData": "firstEntryJson",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [200, 300],
+      "webhookMethods": { "POST": true }
+    },
+    {
+      "parameters": {
+        "functionCode": "// Auto-detect and normalize binary keys\nconst body = $json.body || {};\nconst incomingBinary = items[0].binary || {};\n\nlet pdfKey = null;\nlet voiceKey = null;\n\n// Find PDF and voice files\nfor (const k of Object.keys(incomingBinary)) {\n  const b = incomingBinary[k] || {};\n  const fn = (b.fileName || '').toLowerCase();\n  const mt = (b.mimeType || '').toLowerCase();\n  \n  if (!pdfKey && (mt.includes('pdf') || fn.endsWith('.pdf') || k.toLowerCase().includes('pdf'))) {\n    pdfKey = k;\n  }\n  if (!voiceKey && (mt.startsWith('audio') || fn.match(/\\.(wav|mp3|m4a|ogg)$/i) || k.toLowerCase().includes('voice'))) {\n    voiceKey = k;\n  }\n}\n\n// Fallback to common names\nif (!pdfKey) pdfKey = ['pdf_file', 'pdf', 'file'].find(k => incomingBinary[k]);\nif (!voiceKey) voiceKey = ['voice_file', 'voice', 'voice_sample'].find(k => incomingBinary[k]);\n\nconst out = {\n  json: {\n    language: (body.language || 'EN').toUpperCase(),\n    use_custom_voice: Boolean(body.use_custom_voice),\n    detected: { pdfKey, voiceKey }\n  },\n  binary: {}\n};\n\nif (pdfKey && incomingBinary[pdfKey]) out.binary.pdf_file = incomingBinary[pdfKey];\nif (voiceKey && incomingBinary[voiceKey]) out.binary.voice_file = incomingBinary[voiceKey];\n\nreturn [out];"
+      },
+      "id": "normalize-binary",
+      "name": "Normalize Binary Keys",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Fix binary data format\nconst incoming = items[0].binary || {};\nconst outBinary = {};\n\nfunction fixBinary(obj, defaultName, defaultMime) {\n  if (!obj) return null;\n  if (obj.data) return obj; // Already correct\n  if (obj.id) return obj; // n8n reference\n  if (typeof obj === 'string') return { data: obj, fileName: defaultName, mimeType: defaultMime };\n  return null;\n}\n\n// Process PDF\nif (incoming.pdf_file) {\n  outBinary.pdf_file = fixBinary(incoming.pdf_file, 'upload.pdf', 'application/pdf');\n  if (outBinary.pdf_file && !outBinary.pdf_file.fileName) outBinary.pdf_file.fileName = 'upload.pdf';\n}\n\n// Process voice file\nif (incoming.voice_file) {\n  outBinary.voice_file = fixBinary(incoming.voice_file, 'voice.wav', 'audio/wav');\n  if (outBinary.voice_file && !outBinary.voice_file.fileName) outBinary.voice_file.fileName = 'voice.wav';\n}\n\nreturn [{ json: items[0].json, binary: outBinary }];"
+      },
+      "id": "fix-binary-shape",
+      "name": "Fix Binary Shape",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [700, 300]
+    },
+    {
+      "parameters": {
+        "filePath": "C:\\\\temp\\\\n8n_pdf.pdf",
+        "binaryPropertyName": "pdf_file"
+      },
+      "id": "write-pdf",
+      "name": "Write PDF to Temp",
+      "type": "n8n-nodes-base.writeBinaryFile",
+      "typeVersion": 1,
+      "position": [980, 200]
+    },
+    {
+      "parameters": {
+        "filePath": "C:\\\\temp\\\\n8n_voice.wav",
+        "binaryPropertyName": "voice_file"
+      },
+      "id": "write-voice",
+      "name": "Write Voice to Temp",
+      "type": "n8n-nodes-base.writeBinaryFile",
+      "typeVersion": 1,
+      "position": [980, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.use_custom_voice }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "check-custom-voice",
+      "name": "Use Custom Voice?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1220, 300]
+    },
+    {
+      "parameters": {
+        "command": "curl -s -X POST \"http://127.0.0.1:8000/simple-pdf-to-speech\" -F \"pdf_file=@C:\\\\temp\\\\n8n_pdf.pdf\" -F \"voice_file=@C:\\\\temp\\\\n8n_voice.wav\" -F \"language={{ $json.language }}\" -F \"use_custom_voice=true\" --output C:\\\\temp\\\\n8n_output.wav"
+      },
+      "id": "curl-with-voice",
+      "name": "API Call (With Voice)",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [1460, 200]
+    },
+    {
+      "parameters": {
+        "command": "curl -s -X POST \"http://127.0.0.1:8000/simple-pdf-to-speech\" -F \"pdf_file=@C:\\\\temp\\\\n8n_pdf.pdf\" -F \"language={{ $json.language }}\" -F \"use_custom_voice=false\" --output C:\\\\temp\\\\n8n_output.wav"
+      },
+      "id": "curl-without-voice",
+      "name": "API Call (Default Voice)",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [1460, 400]
+    },
+    {
+      "parameters": {
+        "filePath": "C:\\\\temp\\\\n8n_output.wav",
+        "binaryPropertyName": "response_audio"
+      },
+      "id": "read-response",
+      "name": "Read Response File",
+      "type": "n8n-nodes-base.readBinaryFile",
+      "typeVersion": 1,
+      "position": [1700, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Final response formatting\nconst resp = items[0];\nconst hasAudio = resp.binary && resp.binary.response_audio && resp.binary.response_audio.data;\n\nreturn [{\n  json: {\n    success: hasAudio,\n    message: hasAudio ? 'Audio generated successfully' : 'Audio generation failed',\n    language: $json.language,\n    custom_voice_used: $json.use_custom_voice,\n    detected: $json.detected\n  },\n  binary: resp.binary\n}];"
+      },
+      "id": "format-response",
+      "name": "Format Response",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1940, 300]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [[{ "node": "Normalize Binary Keys", "type": "main", "index": 0 }]]
+    },
+    "Normalize Binary Keys": {
+      "main": [[{ "node": "Fix Binary Shape", "type": "main", "index": 0 }]]
+    },
+    "Fix Binary Shape": {
+      "main": [[
+        { "node": "Write PDF to Temp", "type": "main", "index": 0 },
+        { "node": "Write Voice to Temp", "type": "main", "index": 0 }
+      ]]
+    },
+    "Write PDF to Temp": {
+      "main": [[{ "node": "Use Custom Voice?", "type": "main", "index": 0 }]]
+    },
+    "Write Voice to Temp": {
+      "main": [[{ "node": "Use Custom Voice?", "type": "main", "index": 0 }]]
+    },
+    "Use Custom Voice?": {
+      "main": [
+        [{ "node": "API Call (With Voice)", "type": "main", "index": 0 }],
+        [{ "node": "API Call (Default Voice)", "type": "main", "index": 0 }]
+      ]
+    },
+    "API Call (With Voice)": {
+      "main": [[{ "node": "Read Response File", "type": "main", "index": 0 }]]
+    },
+    "API Call (Default Voice)": {
+      "main": [[{ "node": "Read Response File", "type": "main", "index": 0 }]]
+    },
+    "Read Response File": {
+      "main": [[{ "node": "Format Response", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": {}
+}

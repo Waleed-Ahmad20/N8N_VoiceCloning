@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environment
+venv/
+.venv/
+env/
+.env
+
+# Checkpoints
+checkpoints/
+
+# Data and temporary files
+pdfs/temp_*.pdf
+voices/outputs/
+voices/uploads/temp_voice_*.wav
+
+# IDE / Editor specific
+.vscode/
+.idea/
